@@ -19,8 +19,8 @@ See `../domainAgentECE/CLAUDE.md` for the strategic context, and (forthcoming)
 | Phase | Scope | Status |
 |-------|-------|--------|
 | 0 | Environment + project audit | ✅ done |
-| 1 | Project init + Trigger.dev + hello task + hello workflow | ✅ done (run `run_06galdgbp5qhnbhu5obdq1ah01`, 262ms, success) |
-| 2 | Content Object + mock agents + workflow | ⏳ |
+| 1 | Project init + Trigger.dev + hello task + hello workflow | ✅ done (`run_06galdgbp5qhnbhu5obdq1ah01`, 262ms, success) |
+| 2 | Content Object + Mock Agents + Workflow | ✅ done (`run_06galhh243875ta6i2feka7f01`, 7.4s, success, all 7 leaf tasks green) |
 | 3 | Real LLM (GLM) + Script + FactCheck + Storyboard | ⏳ |
 | 4 | TTS + FFmpeg + MP4 | ⏳ |
 | 5 | Quality Agent + Human Approval | ⏳ |
