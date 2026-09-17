@@ -1,5 +1,5 @@
 // Framework-agnostic workflow logic — composes agents into a single Content Object.
-// Trigger.dev tasks call this; tests mock TaskCaller to drive it directly.
+// Trigger.dev tasks call this; tests pass a mock LLMProvider to drive it.
 
 import {
   ContentObjectSchema,
@@ -17,15 +17,14 @@ import {
 
 import { mockTopicAgent } from "../agents/topic/mock.js";
 import { mockResearchAgent } from "../agents/research/mock.js";
-import { mockScriptAgent } from "../agents/script/mock.js";
-import { mockFactCheckAgent } from "../agents/factcheck/mock.js";
-import { mockStoryboardAgent } from "../agents/storyboard/mock.js";
 import { mockVoiceAgent } from "../agents/voice/mock.js";
 import { mockQualityAgent } from "../agents/quality/mock.js";
 
-// Each stage takes a slice and returns a typed slice; the orchestrator stitches them.
-// Wrapping in functions (not bare exports) lets future phases swap in real LLM-driven agents
-// without changing the workflow signature.
+import { scriptAgent } from "../agents/script/index.js";
+import { factCheckAgent } from "../agents/factcheck/index.js";
+import { storyboardAgent } from "../agents/storyboard/index.js";
+
+import { MockLLMProvider, type LLMProvider } from "../providers/llm/index.js";
 
 export type StageRunner<K extends keyof StageMap> = (
   input: StageMap[K]["input"]
@@ -41,65 +40,75 @@ export interface StageMap {
   quality: { input: ContentObject; output: Quality };
 }
 
-// Default mock runners — used when no custom runner is supplied.
-export const mockRunners: { [K in keyof StageMap]: StageRunner<K> } = {
-  topic: async ({ rawTopic }) => mockTopicAgent(rawTopic),
-  research: async (topic) => mockResearchAgent(topic),
-  script: async ({ topic, research }) => mockScriptAgent(topic, research),
-  factCheck: async (script) => mockFactCheckAgent(script),
-  storyboard: async (script) => mockStoryboardAgent(script),
-  voice: async (storyboard) => mockVoiceAgent(storyboard),
-  quality: async (co) => mockQualityAgent(co),
-};
+// Default runners use mock agents for stages that don't need an LLM, and dispatch
+// through the dispatcher (mock vs real based on mockMode) for the LLM-driven stages.
+export function buildDefaultRunners(opts: {
+  mockMode: boolean;
+  llm: LLMProvider;
+}): { [K in keyof StageMap]: StageRunner<K> } {
+  const { mockMode, llm } = opts;
+  return {
+    topic: async ({ rawTopic }) => mockTopicAgent(rawTopic),
+    research: async (topic) => mockResearchAgent(topic),
+    script: async ({ topic, research }) => scriptAgent({ topic, research }, mockMode, { llm }),
+    factCheck: async (script) => factCheckAgent({ script }, mockMode, { llm }),
+    storyboard: async (script) => storyboardAgent({ script }, mockMode, { llm }),
+    voice: async (storyboard) => mockVoiceAgent(storyboard),
+    quality: async (co) => mockQualityAgent(co),
+  };
+}
 
 export interface WorkflowRunOptions {
   rawTopic: string;
   mockMode?: boolean;
+  llmProvider?: LLMProvider;
   runners?: Partial<{ [K in keyof StageMap]: StageRunner<K> }>;
 }
 
 export async function runVideoFactoryWorkflow(
   opts: WorkflowRunOptions
 ): Promise<ContentObject> {
-  const r = { ...mockRunners, ...(opts.runners ?? {}) } as {
+  const mockMode = opts.mockMode ?? true;
+  const llm = opts.llmProvider ?? new MockLLMProvider();
+  const defaults = buildDefaultRunners({ mockMode, llm });
+  const r = { ...defaults, ...(opts.runners ?? {}) } as {
     [K in keyof StageMap]: StageRunner<K>;
   };
-  const mockMode = opts.mockMode ?? true;
 
   let co = createEmptyContentObject(opts.rawTopic);
   co = touchContentObject({ ...co, mockMode }, "topic");
 
-  // 1. topic
+  // 1. topic (mock)
   const topic = await r.topic({ rawTopic: opts.rawTopic });
   co = { ...co, topic };
   co = touchContentObject(co, "research");
 
-  // 2. research
+  // 2. research (mock)
   const research = await r.research(topic);
   co = { ...co, research };
   co = touchContentObject(co, "script");
 
-  // 3. script
+  // 3. script (mock or real LLM)
   const script = await r.script({ topic, research });
   co = { ...co, script };
   co = touchContentObject(co, "factCheck");
 
-  // 4. factCheck
+  // 4. factCheck (mock or real LLM)
   const factCheck = await r.factCheck(script);
   co = { ...co, factCheck };
   co = touchContentObject(co, "storyboard");
 
-  // 5. storyboard
+  // 5. storyboard (mock or real LLM)
   const storyboard = await r.storyboard(script);
   co = { ...co, storyboard };
   co = touchContentObject(co, "voice");
 
-  // 6. voice (Phase 2 stub)
+  // 6. voice (mock stub)
   const voice = await r.voice(storyboard);
   co = { ...co, voice };
   co = touchContentObject(co, "quality");
 
-  // 7. quality
+  // 7. quality (mock structural check)
   const quality = await r.quality(co);
   co = { ...co, quality };
 
@@ -107,6 +116,5 @@ export async function runVideoFactoryWorkflow(
   const status = quality.passed ? "completed" : "failed";
   co = touchContentObject({ ...co, status }, "done");
 
-  // Validate the assembled object. If Zod fails here, it's a bug in the workflow.
   return ContentObjectSchema.parse(co);
 }

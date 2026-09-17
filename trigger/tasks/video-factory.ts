@@ -1,6 +1,5 @@
-// Orchestrator task — the single Trigger.dev entry point for Phase 2.
-// Calls each leaf task via triggerAndWait, stitches the Content Object,
-// and persists it to output/<contentId>.json so we can verify offline.
+// Orchestrator task — single Trigger.dev entry point.
+// Reads MOCK_MODE from process.env (default true). Passes mockMode to child tasks.
 
 import { task, logger } from "@trigger.dev/sdk";
 import { promises as fs } from "node:fs";
@@ -9,6 +8,7 @@ import {
   ContentObjectSchema,
   type ContentObject,
 } from "../../src/domain/content-object.js";
+import { readMockMode } from "../../src/providers/llm/index.js";
 import { vfTopicTask } from "./vf-topic.js";
 import { vfResearchTask } from "./vf-research.js";
 import { vfScriptTask } from "./vf-script.js";
@@ -26,11 +26,14 @@ async function ensureOutputDir(): Promise<void> {
 export const videoFactoryTask = task({
   id: "video-factory",
   maxDuration: 300,
-  run: async (payload: { rawTopic: string }) => {
+  run: async (payload: { rawTopic: string; mockMode?: boolean }) => {
     const startedAt = new Date().toISOString();
+    const mockMode = payload.mockMode ?? readMockMode();
+
     logger.info("[video-factory] started", {
       taskId: "video-factory",
       rawTopic: payload.rawTopic,
+      mockMode,
       startedAt,
     });
 
@@ -44,18 +47,18 @@ export const videoFactoryTask = task({
     if (!researchRun.ok) throw new Error("vf-research failed");
     const research = researchRun.output;
 
-    // 3. script
-    const scriptRun = await vfScriptTask.triggerAndWait({ topic, research });
+    // 3. script (LLM-aware)
+    const scriptRun = await vfScriptTask.triggerAndWait({ topic, research, mockMode });
     if (!scriptRun.ok) throw new Error("vf-script failed");
     const script = scriptRun.output;
 
-    // 4. factCheck
-    const factCheckRun = await vfFactCheckTask.triggerAndWait({ script });
+    // 4. factCheck (LLM-aware)
+    const factCheckRun = await vfFactCheckTask.triggerAndWait({ script, mockMode });
     if (!factCheckRun.ok) throw new Error("vf-factcheck failed");
     const factCheck = factCheckRun.output;
 
-    // 5. storyboard
-    const storyboardRun = await vfStoryboardTask.triggerAndWait({ script });
+    // 5. storyboard (LLM-aware)
+    const storyboardRun = await vfStoryboardTask.triggerAndWait({ script, mockMode });
     if (!storyboardRun.ok) throw new Error("vf-storyboard failed");
     const storyboard = storyboardRun.output;
 
@@ -79,10 +82,12 @@ export const videoFactoryTask = task({
       quality: { passed: false, issues: [] },
       status: "in_progress",
       currentStage: "quality",
-      mockMode: true,
+      mockMode,
     };
 
-    const qualityRun = await vfQualityTask.triggerAndWait({ contentObject: partial });
+    const qualityRun = await vfQualityTask.triggerAndWait({
+      contentObject: partial,
+    });
     if (!qualityRun.ok) throw new Error("vf-quality failed");
     const quality = qualityRun.output;
 
@@ -95,7 +100,6 @@ export const videoFactoryTask = task({
     };
     const validated = ContentObjectSchema.parse(finalCo);
 
-    // Persist
     await ensureOutputDir();
     const outPath = path.join(OUTPUT_DIR, `${validated.id}.json`);
     await fs.writeFile(outPath, JSON.stringify(validated, null, 2), "utf-8");
@@ -105,6 +109,7 @@ export const videoFactoryTask = task({
       contentId: validated.id,
       status: validated.status,
       outputPath: outPath,
+      mockMode,
       durationMs: Date.parse(validated.updatedAt) - Date.parse(startedAt),
     });
 
@@ -113,6 +118,7 @@ export const videoFactoryTask = task({
       status: validated.status,
       outputPath: outPath,
       qualityPassed: validated.quality.passed,
+      mockMode,
     };
   },
 });

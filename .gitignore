@@ -18,6 +18,7 @@ pnpm-debug.log*
 # Trigger.dev local
 .trigger-dev/
 .trigger-dev-local/
+.trigger/
 
 # Project runtime
 output/

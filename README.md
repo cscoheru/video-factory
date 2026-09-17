@@ -21,7 +21,7 @@ See `../domainAgentECE/CLAUDE.md` for the strategic context, and (forthcoming)
 | 0 | Environment + project audit | ✅ done |
 | 1 | Project init + Trigger.dev + hello task + hello workflow | ✅ done (`run_06galdgbp5qhnbhu5obdq1ah01`, 262ms, success) |
 | 2 | Content Object + Mock Agents + Workflow | ✅ done (`run_06galhh243875ta6i2feka7f01`, 7.4s, success, all 7 leaf tasks green) |
-| 3 | Real LLM (GLM) + Script + FactCheck + Storyboard | ⏳ |
+| 3 | Real LLM (GLM) + Script + FactCheck + Storyboard | ✅ done (real-GLM E2E: `run_06gapavq53j4o9ka2clm0mb701`, 6.7s, GLM produced 95s script + 5-scene storyboard; FactCheck caught 2 unverifiable claims) |
 | 4 | TTS + FFmpeg + MP4 | ⏳ |
 | 5 | Quality Agent + Human Approval | ⏳ |
 
